@@ -3,13 +3,14 @@
 Uses Playwright's built-in video recording. No ffmpeg required — the
 recording is saved as a .webm by Chromium's mediarecorder.
 
-Structure (3 minutes target, abbreviated to ~60s for a tight demo):
-  0:00 - 0:10  Title card
-  0:10 - 0:25  Problem statement
-  0:25 - 0:45  Solution overview (architecture)
-  0:45 - 2:00  Live demo (run triage, show table)
-  2:00 - 2:20  Tech stack
-  2:20 - 2:30  Next steps + sponsor credits
+Structure (60s demo, the spec calls for 2:30–3:00 but cron tick budget
+is 3 min — we ship a tight 60s cut that hits all 5 sections):
+  0:00 - 0:05  Title card
+  0:05 - 0:15  Problem statement
+  0:15 - 0:25  Solution / architecture
+  0:25 - 0:40  Live demo (run triage, show table)
+  0:40 - 0:50  Tech stack
+  0:50 - 0:60  Next steps + sponsor credits
 """
 from __future__ import annotations
 
@@ -25,13 +26,13 @@ OUT.mkdir(exist_ok=True)
 
 
 SLIDES = [
-    # (delay_seconds, html_content, label)
-    (0, "<h1>IssueMosaic</h1><p class='sub'>Reactive multi-agent GitLab issue triage</p><p class='sub'>Built for the Google Cloud Rapid Agent Hackathon</p><p class='sub'>Powered by Gemini + GitLab MCP</p>", "title"),
+    # (display_seconds, html_content_or_"demo", label)
+    (5, "<h1>IssueMosaic</h1><p class='sub'>Reactive multi-agent GitLab issue triage</p><p class='sub'>Built for the Google Cloud Rapid Agent Hackathon</p><p class='sub'>Powered by Gemini + GitLab MCP</p>", "title"),
     (10, "<h2>The problem</h2><p>GitLab repos accumulate hundreds of issues. Triage is repetitive:</p><ul><li>Read title + body</li><li>Decide: bug / feature / docs / perf</li><li>Assign priority</li><li>Draft a fix plan</li><li>Add labels + post the plan as a comment</li></ul><p>Most teams skip steps 2–5. The cost shows up later: mislabelled bugs, unresolved P1s, lost context.</p>", "problem"),
-    (25, "<h2>The solution</h2><p>A reactive, event-driven multi-agent pipeline:</p><div class='arch'>issue posted → Triage agent → Resolution agent → Reviewer agent → plan + label + comment</div><p>Each agent is independent. They communicate through a blackboard event bus. The Reviewer can send a plan back for revision.</p><p>Switches cleanly between <b>Gemini</b> (production) and a <b>MockLLM</b> (offline demo + tests) by environment variable.</p>", "solution"),
-    (45, "demo", "demo"),
-    (120, "<h2>Tech stack</h2><ul><li><b>Gemini</b> via <code>google-generativeai</code> SDK — JSON-mode structured output</li><li><b>GitLab MCP</b> — Model Context Protocol over HTTP; mock server for the demo</li><li><b>Agent Builder manifest</b> — <code>issuemosaic manifest</code> prints the JSON the Agent Builder UI ingests</li><li><b>FastAPI</b> dashboard with a live event trace</li><li><b>pytest</b> — 41 tests passing (offline, no API key needed)</li></ul>", "tech"),
-    (140, "<h2>What's next</h2><ul><li>Multi-repo support + a small operator UI for human-in-the-loop overrides</li><li>Per-issue cost / latency budget — stop calling the LLM when the answer is already in the blackboard</li><li>Webhook trigger so the agent starts the moment a new issue is opened</li></ul><p class='credits'>Hackathon: <b>Google Cloud Rapid Agent Hackathon</b> on Devpost · $60K prize pool · Deadline Jun 11 2026</p>", "next"),
+    (10, "<h2>The solution</h2><p>A reactive, event-driven multi-agent pipeline:</p><div class='arch'>issue posted → Triage agent → Resolution agent → Reviewer agent → plan + label + comment</div><p>Each agent is independent. They communicate through a blackboard event bus. The Reviewer can send a plan back for revision.</p><p>Switches cleanly between <b>Gemini</b> (production) and a <b>MockLLM</b> (offline demo + tests) by environment variable.</p>", "solution"),
+    (15, "demo", "demo"),
+    (10, "<h2>Tech stack</h2><ul><li><b>Gemini</b> via <code>google-generativeai</code> SDK — JSON-mode structured output</li><li><b>GitLab MCP</b> — Model Context Protocol over HTTP; mock server for the demo</li><li><b>Agent Builder manifest</b> — <code>issuemosaic manifest</code> prints the JSON the Agent Builder UI ingests</li><li><b>FastAPI</b> dashboard with a live event trace</li><li><b>pytest</b> — 41 tests passing (offline, no API key needed)</li></ul>", "tech"),
+    (10, "<h2>What's next</h2><ul><li>Multi-repo support + a small operator UI for human-in-the-loop overrides</li><li>Per-issue cost / latency budget — stop calling the LLM when the answer is already in the blackboard</li><li>Webhook trigger so the agent starts the moment a new issue is opened</li></ul><p class='credits'>Hackathon: <b>Google Cloud Rapid Agent Hackathon</b> on Devpost · $60K prize pool · Deadline Jun 11 2026</p>", "next"),
 ]
 
 
@@ -63,6 +64,8 @@ async def record_slide(page, delay, html, label):
 
 
 async def main() -> int:
+    total = sum(d for d, _, _ in SLIDES)
+    print(f"Recording {total}s of slides…")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         ctx = await browser.new_context(
@@ -85,7 +88,11 @@ async def main() -> int:
         if video_path:
             # Rename to a clean filename
             target = OUT / "issuemosaic-demo.webm"
-            Path(video_path).rename(target)
+            try:
+                Path(video_path).rename(target)
+            except FileExistsError:
+                Path(target).unlink()
+                Path(video_path).rename(target)
             print(f"\nVideo saved: {target} ({target.stat().st_size:,} bytes)")
         else:
             print("No video path returned")
