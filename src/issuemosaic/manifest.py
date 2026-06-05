@@ -52,7 +52,7 @@ def build_manifest(llm: LLM, mcp=None) -> Dict[str, Any]:
                 "You are the Reviewer agent. Validate a proposed resolution plan and return "
                 "strict JSON: decision (APPROVED/REVISE), feedback, concerns."
             ),
-            "tools": [],
+            "tools": ["get_issue", "post_comment"],
         },
     ]
     return {

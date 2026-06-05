@@ -21,11 +21,11 @@ issue posted ──▶ Triage agent ──▶ Resolution agent ──▶ Reviewe
 | Hackathon criterion | How IssueMosaic answers it |
 |---|---|
 | **Powered by Gemini** | `GeminiLLM` backend (`src/issuemosaic/llm/gemini.py`) — drop-in `LLM` Protocol impl using `google-generativeai`. Falls back to `MockLLM` if `GOOGLE_API_KEY` is unset, so the project runs end-to-end offline. |
-| **Google Cloud Agent Builder–ready** | Each agent exposes its `system_prompt` + `tool_spec` in the shape Agent Builder ingests (`src/issuemosaic/agents/manifest.py`). One CLI command (`issuemosaic manifest`) prints the JSON to paste into the Agent Builder UI. |
-| **GitLab MCP integration** | `GitLabMCPClient` (`src/issuemosaic/mcp/gitlab.py`) speaks the Model Context Protocol over HTTP. Includes a `MockMCPServer` so the demo runs without a real GitLab instance. |
+| **Google Cloud Agent Builder–ready** | Each agent exposes its `system_prompt` + `tool_spec` in the shape Agent Builder ingests (`src/issuemosaic/manifest.py`). One CLI command (`issuemosaic manifest`) prints the JSON to paste into the Agent Builder UI; same payload is served at `GET /api/manifest`. |
+| **GitLab MCP integration** | `GitLabMCPClient` (`src/issuemosaic/mcp/client.py`) speaks the Model Context Protocol over HTTP. Includes a `MockMCPServer` (`src/issuemosaic/mcp/server.py`) so the demo runs without a real GitLab instance. |
 | **Move beyond chat** | Agents post **comments**, **labels**, and **milestone updates** to GitLab via MCP — the system actually *does* the triage, not just *describes* it. |
 | **Multi-step mission** | Orchestrator drives a 3-step plan: (1) Triage categorises, (2) Resolution drafts a plan, (3) Reviewer validates against project history. The loop is event-driven on the blackboard, not a static prompt chain. |
-| **Eval/observability** | `FastAPI` dashboard (`issuemosaic dashboard`) shows live trace: every event, every LLM call, every MCP roundtrip. |
+| **Eval/observability** | `FastAPI` dashboard (`issuemosaic serve` → `src/issuemosaic/api.py`) shows live trace: every event, every LLM call, every MCP roundtrip. Endpoints: `/api/health`, `/api/manifest`, `/api/trace`, `/api/triage`. |
 
 ## Project structure
 
@@ -34,29 +34,32 @@ issuemosaic/
 ├── src/issuemosaic/
 │   ├── blackboard.py       # reactive event bus
 │   ├── orchestrator.py     # multi-agent reactive loop
-│   ├── cli.py              # `run`, `dashboard`, `manifest` commands
+│   ├── cli.py              # `triage-all`, `serve`, `manifest` commands
+│   ├── api.py              # FastAPI dashboard (live trace + manifest + triage)
+│   ├── manifest.py         # builds the Agent Builder manifest from the live registry
 │   ├── agents/
 │   │   ├── base.py         # Agent protocol
 │   │   ├── triage.py       # categorises incoming issues
-│   │   ├── resolver.py     # drafts the resolution plan
+│   │   ├── resolution.py   # drafts the resolution plan
 │   │   └── reviewer.py     # validates against project history
 │   ├── llm/
 │   │   ├── base.py         # LLM Protocol
 │   │   ├── mock.py         # offline mock (no API key needed)
 │   │   └── gemini.py       # Gemini LLM (drops in when GOOGLE_API_KEY set)
 │   ├── mcp/
-│   │   ├── base.py         # MCPClient protocol
-│   │   ├── mock.py         # in-process mock GitLab MCP server
-│   │   └── gitlab.py       # real GitLab MCP client (httpx)
-│   ├── tools/
-│   │   └── registry.py     # exposes MCP methods as AgentTools
-│   └── dashboard.py        # FastAPI live trace UI
+│   │   ├── server.py       # in-process mock GitLab MCP server
+│   │   └── client.py       # real GitLab MCP client (httpx) + factory
+│   └── tools/
+│       └── registry.py     # exposes MCP methods as AgentTools
 ├── tests/
 │   ├── test_blackboard.py
-│   ├── test_mcp.py
+│   ├── test_mcp_server.py
 │   ├── test_agents.py
-│   ├── test_e2e.py
-│   └── test_gemini_adapter.py
+│   ├── test_orchestrator.py
+│   ├── test_api.py
+│   ├── test_tools.py
+│   ├── test_llm_mock.py
+│   └── test_hackathon_criteria.py   # asserts the 6 README hackathon claims
 ├── pyproject.toml
 └── README.md
 ```
@@ -71,11 +74,11 @@ uv venv
 # 2. Run the test suite (offline, ~5s)
 .venv/bin/pytest tests/
 
-# 3. Run a single triage run against the mock GitLab server
-.venv/bin/issuemosaic run --project demo --mock-gitlab
+# 3. Run a triage run against the mock GitLab server
+.venv/bin/issuemosaic triage-all --dry-run --json
 
 # 4. Launch the live dashboard
-.venv/bin/issuemosaic dashboard --port 8000
+.venv/bin/issuemosaic serve --port 8000
 # open http://localhost:8000
 ```
 
@@ -83,7 +86,7 @@ uv venv
 
 ```bash
 export GOOGLE_API_KEY="…"
-.venv/bin/issuemosaic run --project demo
+.venv/bin/issuemosaic triage-all
 ```
 
 ### With a real GitLab instance

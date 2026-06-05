@@ -62,12 +62,20 @@ class MockMCPServer:
     # ---- MCP-shaped operations ----------------------------------------
 
     def list_issues(self, state: str = "opened") -> List[Dict[str, Any]]:
-        return [copy.deepcopy(i) for i in self._issues]
+        # GitLab returns a flat record per issue including the issue state
+        out = []
+        for i in self._issues:
+            rec = copy.deepcopy(i)
+            rec.setdefault("state", "opened")
+            out.append(rec)
+        return out
 
     def get_issue(self, iid: int) -> Dict[str, Any]:
         for i in self._issues:
             if i["iid"] == iid:
-                return copy.deepcopy(i)
+                rec = copy.deepcopy(i)
+                rec.setdefault("state", "opened")
+                return rec
         raise KeyError(f"issue {iid} not found")
 
     def post_comment(self, iid: int, body: str) -> Dict[str, Any]:
